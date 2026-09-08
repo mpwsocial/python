@@ -1,9 +1,5 @@
 # MoiPayWay Python SDK
 
-Official Python SDK for the [MoiPayWay API](https://documenter.getpostman.com/view/11919136/2s93Joz7Bq).
-
-Use this client to call every endpoint in that collection: wallets, collections, transfers, users, verification, cards, catalogs, omnichain, and the rest of the documented surface.
-
 ```bash
 pip install moipayway
 ```
@@ -14,12 +10,11 @@ from moipayway import Client
 
 mpw = Client(os.environ["MOIPAYWAY_API_KEY"], environment="test")
 
-countries = mpw.countries()
-wallet = mpw.create_wallet({
+wallet = mpw.wallet.create({
     "code": "NGN",
     "meta": {"name": "Operations", "user_id": "user-uuid"},
 })
-order = mpw.initiate_collection({
+order = mpw.wallet.collection.initiate({
     "order_reference_code": "ORD-1001",
     "meta": {
         "amount": "5000",
@@ -28,26 +23,23 @@ order = mpw.initiate_collection({
         "user_id": "user-uuid",
     },
 })
+individual = mpw.user.account.individual.create({
+    # request body
+})
+job_types = mpw.user.misc.job_types()
+lookup = mpw.verification.lookup({"code": "cac"})
 ```
 
-## API docs
+Collection paths are methods on the client:
 
-Paths, methods, and request bodies are in the public collection:
+- `POST wallet/create` → `mpw.wallet.create(body)`
+- `POST wallet/collection/initiate` → `mpw.wallet.collection.initiate(body)`
+- `POST user/account/individual/create` → `mpw.user.account.individual.create(body)`
+- `GET user/misc/job-types` → `mpw.user.misc.job_types()`
+- `POST verification/lookup` → `mpw.verification.lookup(body)`
+- `POST omnichain/wallet/evm/eoa/create-wallet` → `mpw.omnichain.wallet.evm.eoa.create_wallet(body)`
 
-[MoiPayWay API (Postman)](https://documenter.getpostman.com/view/11919136/2s93Joz7Bq)
-
-Call any of those endpoints with `request()`:
-
-```python
-mpw.request("POST", "wallet/details", {"wallet_id": "..."})
-mpw.request("GET", "user/misc/countries", auth=False)
-```
-
-- `test` → `https://dev.moipayway.co`
-- `live` → `https://api.moipayway.co`
-- Auth: `Authorization: Bearer <api_key>` (pass `auth=False` for documented catalog GETs)
-
-## Webhooks
+`test` uses `https://dev.moipayway.co`. `live` uses `https://api.moipayway.co`.
 
 ```python
 from moipayway import verify_webhook
