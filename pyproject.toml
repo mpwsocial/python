@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "moipayway"
 version = "0.1.0"
-description = "Official MoiPayWay Python SDK for merchant REST APIs."
+description = "Official Python SDK for the MoiPayWay API."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
