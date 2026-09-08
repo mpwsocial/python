@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moipayway"
+version = "0.1.0"
+description = "Official MoiPayWay Python SDK for merchant REST APIs."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "MoiPayWay" }]
+keywords = ["moipayway", "payments", "wallets", "africa"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/mpwsocial/python"
+
+[tool.setuptools.packages.find]
+where = ["src"]
