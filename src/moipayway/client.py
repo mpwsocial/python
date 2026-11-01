@@ -5,6 +5,7 @@ import hmac
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -59,6 +60,7 @@ class Client:
         self.misc = Misc(self)
         self.omnichain = Omnichain(self)
         self.simulation = Simulation(self)
+        self.system = System(self)
         self.user = User(self)
         self.verification = Verification(self)
         self.wallet = Wallet(self)
@@ -74,39 +76,43 @@ class Client:
         if auth:
             if not self.api_key:
                 raise ValueError("api_key is required")
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        if method.upper() not in ("GET", "HEAD"):
-            data = json.dumps(body or {}, separators=(",", ":")).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
+            headers["Authorization"] = "Bearer " + self.api_key
+        method_u = method.upper()
+        if method_u in ("GET", "HEAD"):
+            if body:
+                url += ("&" if "?" in url else "?") + urllib.parse.urlencode(body)
+        else:
+            data = json.dumps(body or {}, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method=method_u)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as res:
                 raw = res.read().decode("utf-8")
-                http_status = res.status
-        except urllib.error.HTTPError as exc:
-            raw = exc.read().decode("utf-8", errors="replace")
-            http_status = exc.code
-        except urllib.error.URLError as exc:
-            raise ApiError("Unable to reach MoiPayWay") from exc
-
+                http = getattr(res, "status", 200)
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode("utf-8", errors="replace")
+            http = e.code
+        except Exception as e:
+            raise ApiError("Unable to reach MoiPayWay") from e
         try:
             decoded = json.loads(raw) if raw else {}
-        except json.JSONDecodeError as exc:
-            raise ApiError("Invalid JSON response", http_status) from exc
-
+        except Exception as e:
+            raise ApiError("Invalid JSON response", http) from e
+        if not isinstance(decoded, dict):
+            raise ApiError("Invalid JSON response", http)
         status = str(decoded.get("status") or "").lower()
         if status in ("failed", "error"):
-            raise ApiError(str(decoded.get("message") or "Request failed"), http_status, decoded)
+            raise ApiError(str(decoded.get("message") or "Request failed"), http, decoded)
         return decoded
 
 
 class Account:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.merchant = AccountMerchant(client)
 
 
 class AccountMerchant:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.product = AccountMerchantProduct(client)
         self.team = AccountMerchantTeam(client)
@@ -119,7 +125,7 @@ class AccountMerchant:
 
 
 class AccountMerchantProduct:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.subscription = AccountMerchantProductSubscription(client)
 
@@ -131,7 +137,7 @@ class AccountMerchantProduct:
 
 
 class AccountMerchantProductSubscription:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def class_(self, body: dict | None = None) -> dict[str, Any]:
@@ -151,7 +157,7 @@ class AccountMerchantProductSubscription:
 
 
 class AccountMerchantTeam:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.permission = AccountMerchantTeamPermission(client)
 
@@ -172,7 +178,7 @@ class AccountMerchantTeam:
 
 
 class AccountMerchantTeamPermission:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def add(self, body: dict | None = None) -> dict[str, Any]:
@@ -189,7 +195,7 @@ class AccountMerchantTeamPermission:
 
 
 class Authentication:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def connect(self, body: dict | None = None) -> dict[str, Any]:
@@ -206,7 +212,7 @@ class Authentication:
 
 
 class Card:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def close(self, body: dict | None = None) -> dict[str, Any]:
@@ -241,7 +247,7 @@ class Card:
 
 
 class Misc:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def actions(self, body: dict | None = None) -> dict[str, Any]:
@@ -270,7 +276,7 @@ class Misc:
 
 
 class Omnichain:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.storage = OmnichainStorage(client)
         self.tokenization = OmnichainTokenization(client)
@@ -278,7 +284,7 @@ class Omnichain:
 
 
 class OmnichainStorage:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def details(self, body: dict | None = None) -> dict[str, Any]:
@@ -289,124 +295,416 @@ class OmnichainStorage:
 
 
 class OmnichainTokenization:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.erc1155 = OmnichainTokenizationErc1155(client)
         self.erc20 = OmnichainTokenizationErc20(client)
         self.erc721 = OmnichainTokenizationErc721(client)
+        self.platform = OmnichainTokenizationPlatform(client)
         self.sep41 = OmnichainTokenizationSep41(client)
+        self.standards = OmnichainTokenizationStandards(client)
+        self.system = OmnichainTokenizationSystem(client)
 
 
 class OmnichainTokenizationErc1155:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def balance(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/balance', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/balance', body or {}, True)
 
     def burn(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/burn', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/burn', body or {}, True)
 
     def deploy(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/deploy', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/deploy', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/info', body or {}, True)
 
     def mint(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/mint', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/mint', body or {}, True)
 
     def transactions(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/transactions', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/transactions', body or {}, True)
 
     def transfer(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc1155/transfer', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/transfer', body or {}, True)
 
 
 class OmnichainTokenizationErc20:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
+    def allowance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/allowance', body or {}, True)
+
+    def approve(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/approve', body or {}, True)
+
     def balance(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/balance', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/balance', body or {}, True)
 
     def burn(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/burn', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/burn', body or {}, True)
 
     def chains(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('GET', 'omnichain/tokenization/erc20/chains', body or {}, True)
+        return self._client.request('GET', 'omnichain/tokenization/standards/erc20/chains', body or {}, True)
 
     def deploy(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/deploy', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/deploy', body or {}, True)
+
+    def freeze_status(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/freeze-status', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/info', body or {}, True)
+
+    def lock(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/lock', body or {}, True)
 
     def mint(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/mint', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/mint', body or {}, True)
+
+    def pause(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/pause', body or {}, True)
 
     def transactions(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/transactions', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/transactions', body or {}, True)
 
     def transfer(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc20/transfer', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/transfer', body or {}, True)
+
+    def unlock(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/unlock', body or {}, True)
+
+    def unpause(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/unpause', body or {}, True)
 
 
 class OmnichainTokenizationErc721:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def balance(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/balance', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/balance', body or {}, True)
 
     def burn(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/burn', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/burn', body or {}, True)
 
     def deploy(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/deploy', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/deploy', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/info', body or {}, True)
 
     def mint(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/mint', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/mint', body or {}, True)
+
+    def owner_of(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/owner-of', body or {}, True)
+
+    def token_uri(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/token-uri', body or {}, True)
 
     def transactions(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/transactions', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/transactions', body or {}, True)
 
     def transfer(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/erc721/transfer', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/transfer', body or {}, True)
+
+
+class OmnichainTokenizationPlatform:
+    def __init__(self, client: Client):
+        self._client = client
+        self.asset = OmnichainTokenizationPlatformAsset(client)
+        self.audit = OmnichainTokenizationPlatformAudit(client)
+        self.dvp = OmnichainTokenizationPlatformDvp(client)
+        self.events = OmnichainTokenizationPlatformEvents(client)
+        self.fx = OmnichainTokenizationPlatformFx(client)
+        self.ops = OmnichainTokenizationPlatformOps(client)
+        self.reconciliation = OmnichainTokenizationPlatformReconciliation(client)
+
+
+class OmnichainTokenizationPlatformAsset:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def details(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/asset/details', body or {}, True)
+
+    def register(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/asset/register', body or {}, True)
+
+
+class OmnichainTokenizationPlatformAudit:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def export(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/audit/export', body or {}, True)
+
+
+class OmnichainTokenizationPlatformDvp:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def cancel(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/cancel', body or {}, True)
+
+    def create(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/create', body or {}, True)
+
+    def execute(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/execute', body or {}, True)
+
+    def fund(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/fund', body or {}, True)
+
+    def list(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/list', body or {}, True)
+
+    def status(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/dvp/status', body or {}, True)
+
+
+class OmnichainTokenizationPlatformEvents:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def list(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/events/list', body or {}, True)
+
+
+class OmnichainTokenizationPlatformFx:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def execute(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/fx/execute', body or {}, True)
+
+    def quote(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/fx/quote', body or {}, True)
+
+
+class OmnichainTokenizationPlatformOps:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def dead_letters(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/ops/dead-letters', body or {}, True)
+
+    def replay(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/ops/replay', body or {}, True)
+
+
+class OmnichainTokenizationPlatformReconciliation:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def run(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/platform/reconciliation/run', body or {}, True)
 
 
 class OmnichainTokenizationSep41:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def balance(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/balance', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/balance', body or {}, True)
 
     def burn(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/burn', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/burn', body or {}, True)
+
+    def chains(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('GET', 'omnichain/tokenization/standards/sep41/chains', body or {}, True)
 
     def deploy(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/deploy', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/deploy', body or {}, True)
 
     def mint(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/mint', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/mint', body or {}, True)
 
     def transactions(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/transactions', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/transactions', body or {}, True)
 
     def transfer(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'omnichain/tokenization/sep41/transfer', body or {}, True)
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/transfer', body or {}, True)
+
+
+class OmnichainTokenizationStandards:
+    def __init__(self, client: Client):
+        self._client = client
+        self.erc1155 = OmnichainTokenizationStandardsErc1155(client)
+        self.erc20 = OmnichainTokenizationStandardsErc20(client)
+        self.erc721 = OmnichainTokenizationStandardsErc721(client)
+        self.sep41 = OmnichainTokenizationStandardsSep41(client)
+
+
+class OmnichainTokenizationStandardsErc1155:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def balance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/balance', body or {}, True)
+
+    def burn(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/burn', body or {}, True)
+
+    def deploy(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/deploy', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/info', body or {}, True)
+
+    def mint(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/mint', body or {}, True)
+
+    def transactions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/transactions', body or {}, True)
+
+    def transfer(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc1155/transfer', body or {}, True)
+
+
+class OmnichainTokenizationStandardsErc20:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def allowance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/allowance', body or {}, True)
+
+    def approve(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/approve', body or {}, True)
+
+    def balance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/balance', body or {}, True)
+
+    def burn(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/burn', body or {}, True)
+
+    def chains(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('GET', 'omnichain/tokenization/standards/erc20/chains', body or {}, True)
+
+    def deploy(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/deploy', body or {}, True)
+
+    def freeze_status(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/freeze-status', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/info', body or {}, True)
+
+    def lock(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/lock', body or {}, True)
+
+    def mint(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/mint', body or {}, True)
+
+    def pause(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/pause', body or {}, True)
+
+    def transactions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/transactions', body or {}, True)
+
+    def transfer(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/transfer', body or {}, True)
+
+    def unlock(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/unlock', body or {}, True)
+
+    def unpause(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc20/unpause', body or {}, True)
+
+
+class OmnichainTokenizationStandardsErc721:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def balance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/balance', body or {}, True)
+
+    def burn(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/burn', body or {}, True)
+
+    def deploy(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/deploy', body or {}, True)
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/info', body or {}, True)
+
+    def mint(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/mint', body or {}, True)
+
+    def owner_of(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/owner-of', body or {}, True)
+
+    def token_uri(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/token-uri', body or {}, True)
+
+    def transactions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/transactions', body or {}, True)
+
+    def transfer(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/erc721/transfer', body or {}, True)
+
+
+class OmnichainTokenizationStandardsSep41:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def balance(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/balance', body or {}, True)
+
+    def burn(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/burn', body or {}, True)
+
+    def chains(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('GET', 'omnichain/tokenization/standards/sep41/chains', body or {}, True)
+
+    def deploy(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/deploy', body or {}, True)
+
+    def mint(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/mint', body or {}, True)
+
+    def transactions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/transactions', body or {}, True)
+
+    def transfer(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/standards/sep41/transfer', body or {}, True)
+
+
+class OmnichainTokenizationSystem:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def capabilities(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/system/capabilities', body or {}, True)
+
+    def status(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/system/status', body or {}, True)
+
+    def transactions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/tokenization/system/transactions', body or {}, True)
 
 
 class OmnichainWallet:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.evm = OmnichainWalletEvm(client)
+        self.policy = OmnichainWalletPolicy(client)
         self.stellar = OmnichainWalletStellar(client)
 
 
 class OmnichainWalletEvm:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.eoa = OmnichainWalletEvmEoa(client)
 
 
 class OmnichainWalletEvmEoa:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.operations = OmnichainWalletEvmEoaOperations(client)
         self.transfer = OmnichainWalletEvmEoaTransfer(client)
@@ -431,7 +729,7 @@ class OmnichainWalletEvmEoa:
 
 
 class OmnichainWalletEvmEoaOperations:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def broadcast_transaction(self, body: dict | None = None) -> dict[str, Any]:
@@ -445,7 +743,7 @@ class OmnichainWalletEvmEoaOperations:
 
 
 class OmnichainWalletEvmEoaTransfer:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def native_token(self, body: dict | None = None) -> dict[str, Any]:
@@ -455,14 +753,31 @@ class OmnichainWalletEvmEoaTransfer:
         return self._client.request('POST', 'omnichain/wallet/evm/eoa/transfer/stablecoin', body or {}, True)
 
 
+class OmnichainWalletPolicy:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def approvals(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/wallet/policy/approvals', body or {}, True)
+
+    def approve(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/wallet/policy/approve', body or {}, True)
+
+    def create(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/wallet/policy/create', body or {}, True)
+
+    def evaluate(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'omnichain/wallet/policy/evaluate', body or {}, True)
+
+
 class OmnichainWalletStellar:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.eoa = OmnichainWalletStellarEoa(client)
 
 
 class OmnichainWalletStellarEoa:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.operations = OmnichainWalletStellarEoaOperations(client)
         self.transfer = OmnichainWalletStellarEoaTransfer(client)
@@ -484,7 +799,7 @@ class OmnichainWalletStellarEoa:
 
 
 class OmnichainWalletStellarEoaOperations:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def create_trustline(self, body: dict | None = None) -> dict[str, Any]:
@@ -495,7 +810,7 @@ class OmnichainWalletStellarEoaOperations:
 
 
 class OmnichainWalletStellarEoaTransfer:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def native_token(self, body: dict | None = None) -> dict[str, Any]:
@@ -506,7 +821,7 @@ class OmnichainWalletStellarEoaTransfer:
 
 
 class Simulation:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.card = SimulationCard(client)
         self.collection = SimulationCollection(client)
@@ -515,7 +830,7 @@ class Simulation:
 
 
 class SimulationCard:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def spend(self, body: dict | None = None) -> dict[str, Any]:
@@ -523,7 +838,7 @@ class SimulationCard:
 
 
 class SimulationCollection:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def initiated_order(self, body: dict | None = None) -> dict[str, Any]:
@@ -537,7 +852,7 @@ class SimulationCollection:
 
 
 class SimulationDirectDebit:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def status(self, body: dict | None = None) -> dict[str, Any]:
@@ -545,15 +860,44 @@ class SimulationDirectDebit:
 
 
 class SimulationTransfer:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def initiated_order(self, body: dict | None = None) -> dict[str, Any]:
         return self._client.request('POST', 'simulation/transfer/initiated-order', body or {}, True)
 
 
+class System:
+    def __init__(self, client: Client):
+        self._client = client
+        self.merchant = SystemMerchant(client)
+
+
+class SystemMerchant:
+    def __init__(self, client: Client):
+        self._client = client
+        self.product_setting = SystemMerchantProductSetting(client)
+
+
+class SystemMerchantProductSetting:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def add(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'system/merchant/product-setting/add', body or {}, True)
+
+    def delete(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'system/merchant/product-setting/delete', body or {}, True)
+
+    def update(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'system/merchant/product-setting/update', body or {}, True)
+
+    def view(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'system/merchant/product-setting/view', body or {}, True)
+
+
 class User:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.account = UserAccount(client)
         self.misc = UserMisc(client)
@@ -562,14 +906,14 @@ class User:
 
 
 class UserAccount:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.business = UserAccountBusiness(client)
         self.individual = UserAccountIndividual(client)
 
 
 class UserAccountBusiness:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def create(self, body: dict | None = None) -> dict[str, Any]:
@@ -583,7 +927,7 @@ class UserAccountBusiness:
 
 
 class UserAccountIndividual:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def create(self, body: dict | None = None) -> dict[str, Any]:
@@ -597,7 +941,7 @@ class UserAccountIndividual:
 
 
 class UserMisc:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def business_industry_list(self, body: dict | None = None) -> dict[str, Any]:
@@ -623,7 +967,7 @@ class UserMisc:
 
 
 class UserSubscription:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def class_(self, body: dict | None = None) -> dict[str, Any]:
@@ -646,7 +990,7 @@ class UserSubscription:
 
 
 class UserVerification:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def bulk_process(self, body: dict | None = None) -> dict[str, Any]:
@@ -660,15 +1004,18 @@ class UserVerification:
 
 
 class Verification:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
+
+    def info(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'verification/info', body or {}, True)
 
     def lookup(self, body: dict | None = None) -> dict[str, Any]:
         return self._client.request('POST', 'verification/lookup', body or {}, True)
 
 
 class Wallet:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.channel = WalletChannel(client)
         self.collection = WalletCollection(client)
@@ -690,15 +1037,50 @@ class Wallet:
 
 
 class WalletChannel:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
+        self.bank_account = WalletChannelBankAccount(client)
         self.transfer_recipient = WalletChannelTransferRecipient(client)
-        self.virtual_account = WalletChannelVirtualAccount(client)
         self.wallet_address = WalletChannelWalletAddress(client)
 
 
+class WalletChannelBankAccount:
+    def __init__(self, client: Client):
+        self._client = client
+        self.compliance_request = WalletChannelBankAccountComplianceRequest(client)
+
+    def details(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/details', body or {}, True)
+
+    def generate(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/generate', body or {}, True)
+
+    def resubscribe(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/resubscribe', body or {}, True)
+
+    def supported_currencies(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/supported-currencies', body or {}, True)
+
+    def supported_institutions(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/supported-institutions', body or {}, True)
+
+
+class WalletChannelBankAccountComplianceRequest:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def list(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/compliance-request/list', body or {}, True)
+
+    def refresh(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/compliance-request/refresh', body or {}, True)
+
+    def respond(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/channel/bank-account/compliance-request/respond', body or {}, True)
+
+
 class WalletChannelTransferRecipient:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.bank = WalletChannelTransferRecipientBank(client)
         self.mobile_money = WalletChannelTransferRecipientMobileMoney(client)
@@ -706,7 +1088,7 @@ class WalletChannelTransferRecipient:
 
 
 class WalletChannelTransferRecipientBank:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def add(self, body: dict | None = None) -> dict[str, Any]:
@@ -738,7 +1120,7 @@ class WalletChannelTransferRecipientBank:
 
 
 class WalletChannelTransferRecipientMobileMoney:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def add(self, body: dict | None = None) -> dict[str, Any]:
@@ -761,7 +1143,7 @@ class WalletChannelTransferRecipientMobileMoney:
 
 
 class WalletChannelTransferRecipientWalletAddress:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def add(self, body: dict | None = None) -> dict[str, Any]:
@@ -771,28 +1153,8 @@ class WalletChannelTransferRecipientWalletAddress:
         return self._client.request('POST', 'wallet/channel/transfer-recipient/wallet-address/details', body or {}, True)
 
 
-class WalletChannelVirtualAccount:
-    def __init__(self, client: "Client"):
-        self._client = client
-
-    def details(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'wallet/channel/virtual-account/details', body or {}, True)
-
-    def generate(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'wallet/channel/virtual-account/generate', body or {}, True)
-
-    def resubscribe(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'wallet/channel/virtual-account/resubscribe', body or {}, True)
-
-    def supported_currencies(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'wallet/channel/virtual-account/supported-currencies', body or {}, True)
-
-    def supported_institutions(self, body: dict | None = None) -> dict[str, Any]:
-        return self._client.request('POST', 'wallet/channel/virtual-account/supported-institutions', body or {}, True)
-
-
 class WalletChannelWalletAddress:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def details(self, body: dict | None = None) -> dict[str, Any]:
@@ -806,7 +1168,7 @@ class WalletChannelWalletAddress:
 
 
 class WalletCollection:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.method = WalletCollectionMethod(client)
 
@@ -827,7 +1189,7 @@ class WalletCollection:
 
 
 class WalletCollectionMethod:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def authorize_3ds(self, body: dict | None = None) -> dict[str, Any]:
@@ -871,7 +1233,7 @@ class WalletCollectionMethod:
 
 
 class WalletExchange:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.cryptotocrypto = WalletExchangeCryptotocrypto(client)
         self.cryptotofiat = WalletExchangeCryptotofiat(client)
@@ -880,26 +1242,27 @@ class WalletExchange:
 
 
 class WalletExchangeCryptotocrypto:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.external = WalletExchangeCryptotocryptoExternal(client)
+        self.wallet = WalletExchangeCryptotocryptoWallet(client)
 
 
 class WalletExchangeCryptotocryptoExternal:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.bridge = WalletExchangeCryptotocryptoExternalBridge(client)
         self.swap = WalletExchangeCryptotocryptoExternalSwap(client)
 
 
 class WalletExchangeCryptotocryptoExternalBridge:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.usdc = WalletExchangeCryptotocryptoExternalBridgeUsdc(client)
 
 
 class WalletExchangeCryptotocryptoExternalBridgeUsdc:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -916,7 +1279,7 @@ class WalletExchangeCryptotocryptoExternalBridgeUsdc:
 
 
 class WalletExchangeCryptotocryptoExternalSwap:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -932,14 +1295,28 @@ class WalletExchangeCryptotocryptoExternalSwap:
         return self._client.request('POST', 'wallet/exchange/cryptotocrypto/external/swap/supported-pairs', body or {}, True)
 
 
+class WalletExchangeCryptotocryptoWallet:
+    def __init__(self, client: Client):
+        self._client = client
+
+    def fees(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/exchange/cryptotocrypto/wallet/fees', body or {}, True)
+
+    def initiate(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/exchange/cryptotocrypto/wallet/initiate', body or {}, True)
+
+    def supported_pairs(self, body: dict | None = None) -> dict[str, Any]:
+        return self._client.request('POST', 'wallet/exchange/cryptotocrypto/wallet/supported-pairs', body or {}, True)
+
+
 class WalletExchangeCryptotofiat:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.external = WalletExchangeCryptotofiatExternal(client)
 
 
 class WalletExchangeCryptotofiatExternal:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -953,13 +1330,13 @@ class WalletExchangeCryptotofiatExternal:
 
 
 class WalletExchangeFiattocrypto:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.wallet = WalletExchangeFiattocryptoWallet(client)
 
 
 class WalletExchangeFiattocryptoWallet:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -973,13 +1350,13 @@ class WalletExchangeFiattocryptoWallet:
 
 
 class WalletExchangeFiattofiat:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.wallet = WalletExchangeFiattofiatWallet(client)
 
 
 class WalletExchangeFiattofiatWallet:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -993,7 +1370,7 @@ class WalletExchangeFiattofiatWallet:
 
 
 class WalletMpwt:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def balance(self, body: dict | None = None) -> dict[str, Any]:
@@ -1007,14 +1384,14 @@ class WalletMpwt:
 
 
 class WalletTransfer:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
         self.cross = WalletTransferCross(client)
         self.direct = WalletTransferDirect(client)
 
 
 class WalletTransferCross:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def fees(self, body: dict | None = None) -> dict[str, Any]:
@@ -1028,7 +1405,7 @@ class WalletTransferCross:
 
 
 class WalletTransferDirect:
-    def __init__(self, client: "Client"):
+    def __init__(self, client: Client):
         self._client = client
 
     def bulk(self, body: dict | None = None) -> dict[str, Any]:

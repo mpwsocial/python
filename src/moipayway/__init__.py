@@ -1,3 +1,3 @@
-from .client import Client, ApiError, verify_webhook
+from .client import ApiError, Client, verify_webhook
 
-__all__ = ["Client", "ApiError", "verify_webhook"]
+__all__ = ["ApiError", "Client", "verify_webhook"]
